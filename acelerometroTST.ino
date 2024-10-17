@@ -1,3 +1,26 @@
+/*
+  -----------------------------
+  Acelerômetro - Monitoramento e Cálculo de Vibração
+  -----------------------------
+  Este programa foi desenvolvido para monitorar as leituras de aceleração 
+  em tempo real usando um acelerômetro MPU6050 e exibi-las através de uma 
+  interface web. O sistema calcula métricas como:
+
+  - Aceleração resultante de exposição para mãos e braços (ARE).
+  - Aceleração normalizada de exposição (AREN).
+  - O fator Dy para estimar a exposição que pode levar ao aparecimento de dedos brancos.
+  - Médias das acelerações ao longo de um minuto.
+  - Alerta de conformidade com as normas NHO.
+
+  O usuário pode ajustar o tempo de exposição (Texp) via interface web, 
+  além de iniciar e parar a coleta de dados manualmente.
+
+  Funcionalidades adicionais incluem:
+  - Interface web para visualização e controle.
+  - Cálculo automático de médias e envio em JSON.
+  - Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
+  -------------------------------
+*/
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <WiFi.h>
@@ -204,9 +227,11 @@ void loop() {
       accelZ_avg = accelZ_sum / measurement_count;
     }
 
-    // Cálculo de ARE e AREN
+    // Cálculo da ARE
     ARE = sqrt(accelX_avg * accelX_avg + accelY_avg * accelY_avg + accelZ_avg * accelZ_avg);
-    AREN = ARE / T_0;  // Normaliza pela referência de tempo T_0
+
+    // Cálculo da AREN com a correção
+    AREN = ARE * sqrt(T_0 / Texp);  // Correção pela referência de tempo T_0
 
     // Cálculo de Dy
     Dy = AREN * pow(Texp, -1.06); // Cálculo conforme a norma
@@ -227,3 +252,4 @@ void loop() {
     }
   }
 }
+
