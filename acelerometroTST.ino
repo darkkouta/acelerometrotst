@@ -255,7 +255,7 @@ void readSensorData() {
   ARE = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
   
   // Normaliza a ARE em relação ao tempo de exposição (Texp)
-  AREN = ARE * sqrt(8 / Texp);
+  AREN = ARE * sqrt(Texp / 8);
 
   // Cálculo de Dy
   Dy = 31.8 * pow(AREN, -1.06);
