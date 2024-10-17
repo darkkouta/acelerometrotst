@@ -1,3 +1,4 @@
+
 /*
   -----------------------------
   Acelerômetro - Monitoramento e Cálculo de Vibração
@@ -12,36 +13,28 @@
   - Médias das acelerações ao longo de um minuto.
   - Alerta de conformidade com as normas NHO.
 
-  O usuário pode ajustar o tempo de exposição (Texp) via interface web, 
-  além de iniciar e parar a coleta de dados manualmente.
-
   Funcionalidades adicionais incluem:
   - Interface web para visualização e controle.
   - Cálculo automático de médias e envio em JSON.
   - Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
   -------------------------------
 */
+
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <math.h>
 
-// Definições do ponto de acesso
-const char* ap_ssid = "Acelerometro_AP"; // Nome da rede
-const char* ap_password = ""; // Rede sem senha (livre)
-
 // Inicializa o servidor web
 WebServer server(80);
-
-// Cria um objeto para o acelerômetro
 Adafruit_MPU6050 mpu;
 
 // Variáveis para o cálculo de vibração
 float ARE = 0.0;  // Aceleração resultante de exposição 
 float AREN = 0.0; // Aceleração normalizada de exposição
 const float T_0 = 8.0; // Tempo de referência de 8 horas
-float Texp = 1.0;  // Valor inicial de Texp em horas (pode ser alterado via web)
+float Texp = 1.0;  // Valor inicial de Texp em horas
 
 // Variáveis para armazenar os dados lidos do acelerômetro
 float accelX = 0.0;
@@ -69,7 +62,7 @@ float Dy = 0.0; // Cálculo de Dy com expoente -1.06
 const float LIMITE_AREN_HAV = 5.0;  // Limite de AREN para mãos e braços (HAV)
 const float LIMITE_AREN_WBV = 1.15; // Limite de AREN para corpo inteiro (WBV)
 
-// HTML da página web com formulário para alterar o Texp
+// HTML da página web com formulário para alterar o Texp e configurar o Wi-Fi
 const char* htmlPage = R"rawliteral(
 <!DOCTYPE HTML>
 <html lang="pt-BR">
@@ -80,7 +73,7 @@ const char* htmlPage = R"rawliteral(
     body { text-align: center; font-family: Arial, sans-serif; }
     table { margin: 0 auto; border-collapse: collapse; }
     table, th, td { border: 1px solid black; padding: 10px; }
-    input[type="number"], input[type="submit"] { padding: 5px; }
+    input[type="number"], input[type="text"], input[type="submit"] { padding: 5px; }
   </style>
   <script>
     function updateData() {
@@ -134,6 +127,13 @@ const char* htmlPage = R"rawliteral(
     <input type="submit" value="Ajustar">
   </form>
 
+  <h3>Configurar Wi-Fi</h3>
+  <form action="/set_wifi" method="POST">
+    <input type="text" name="ssid" placeholder="SSID" required>
+    <input type="text" name="password" placeholder="Senha" required>
+    <input type="submit" value="Conectar">
+  </form>
+
   <h3>Controle de Leitura</h3>
   <form action="/start_stop" method="POST">
     <input type="submit" value="Iniciar/Parar Leituras">
@@ -155,7 +155,7 @@ void setup() {
   }
   
   // Inicia a rede Wi-Fi
-  WiFi.softAP(ap_ssid, ap_password);
+  WiFi.softAP("Acelerometro_AP", ""); // AP inicial sem senha
   Serial.println("Rede Wi-Fi iniciada");
   
   // Define rotas para o servidor web
@@ -167,89 +167,90 @@ void setup() {
     server.send(200, "application/json", String("{\"accelX\":") + accelX + ",\"accelY\":" + accelY + ",\"accelZ\":" + accelZ +
                  ",\"accelX_avg\":" + accelX_avg + ",\"accelY_avg\":" + accelY_avg + ",\"accelZ_avg\":" + accelZ_avg +
                  ",\"ARE\":" + ARE + ",\"AREN\":" + AREN + ",\"Dy\":" + Dy +
-                 ",\"Texp\":" + Texp + ",\"countdown\":" + (countdown_active ? (countdown_time - (millis() - countdown_start_time) / 1000) : countdown_time) +
-                 ",\"alertaHAV\":\"" + (AREN > LIMITE_AREN_HAV ? "ALERTA: Aceleração para Mãos e Braços ultrapassou o limite!" : "") +
-                 "\",\"alertaWBV\":\"" + (AREN > LIMITE_AREN_WBV ? "ALERTA: Aceleração para Corpo Inteiro ultrapassou o limite!" : "") + "\"}");
-  });
-  
-  server.on("/set_time", HTTP_POST, []() {
-    if (server.hasArg("Texp")) {
-      Texp = server.arg("Texp").toFloat();
-      Serial.print("Tempo de exposição ajustado: ");
-      Serial.println(Texp);
-    }
-    server.send(200, "text/html", htmlPage); // Redireciona de volta para a página
+                 ",\"Texp\":" + Texp + ",\"countdown\":" + countdown_time +
+                 ",\"alertaHAV\":\"" + (AREN > LIMITE_AREN_HAV ? "Exposição excessiva para HAV!" : "Dentro do limite para HAV!") + "\"" +
+                 ",\"alertaWBV\":\"" + (AREN > LIMITE_AREN_WBV ? "Exposição excessiva para WBV!" : "Dentro do limite para WBV!") + "\"}");
   });
 
+  // Rota para ajustar Texp
+  server.on("/set_time", HTTP_POST, []() {
+    if (server.arg("Texp") != "") {
+      Texp = server.arg("Texp").toFloat(); // Converte o valor de Texp para float
+    }
+    server.sendHeader("Location", "/"); // Redireciona para a página principal
+    server.send(302, "text/plain", ""); // Responde com redirecionamento
+  });
+
+  // Rota para configurar Wi-Fi
+  server.on("/set_wifi", HTTP_POST, []() {
+    String ssid = server.arg("ssid");
+    String password = server.arg("password");
+    WiFi.begin(ssid.c_str(), password.c_str()); // Conecta à rede Wi-Fi
+    server.sendHeader("Location", "/"); // Redireciona para a página principal
+    server.send(302, "text/plain", ""); // Responde com redirecionamento
+  });
+
+  // Rota para iniciar/parar as leituras
   server.on("/start_stop", HTTP_POST, []() {
     isReading = !isReading; // Alterna o estado de leitura
     if (isReading) {
-      Serial.println("Leitura iniciada");
-      measurement_start_time = millis();
-      measurement_count = 0; // Reseta a contagem
-      accelX_sum = 0.0;
-      accelY_sum = 0.0;
-      accelZ_sum = 0.0;
-      countdown_start_time = millis(); // Inicia a contagem
+      measurement_start_time = millis(); // Marca o tempo de início
+      measurement_count = 0; // Reinicia a contagem
+      accelX_sum = 0; // Reinicia a soma
+      accelY_sum = 0; // Reinicia a soma
+      accelZ_sum = 0; // Reinicia a soma
       countdown_active = true; // Ativa a contagem regressiva
+      countdown_start_time = millis(); // Inicia o tempo
     } else {
-      Serial.println("Leitura parada");
-      countdown_active = false; // Para a contagem regressiva
+      countdown_active = false; // Desativa a contagem regressiva
+      // Calcula a média final
+      if (measurement_count > 0) {
+        accelX_avg = accelX_sum / measurement_count;
+        accelY_avg = accelY_sum / measurement_count;
+        accelZ_avg = accelZ_sum / measurement_count;
+        // Cálculo de ARE e AREN
+        ARE = sqrt(pow(accelX_avg, 2) + pow(accelY_avg, 2) + pow(accelZ_avg, 2));
+        AREN = ARE * (Texp / T_0);
+        // Cálculo de Dy
+        Dy = AREN * pow(Texp, -1.06); // Cálculo de Dy com expoente -1.06
+      }
     }
-    server.send(200, "text/html", htmlPage); // Redireciona de volta para a página
+    server.sendHeader("Location", "/"); // Redireciona para a página principal
+    server.send(302, "text/plain", ""); // Responde com redirecionamento
   });
-  
-  server.begin();
-  Serial.println("Servidor web iniciado");
+
+  server.begin(); // Inicia o servidor
 }
 
 void loop() {
-  server.handleClient();
-
+  server.handleClient(); // Mantém o servidor ativo
+  
+  // Se a leitura estiver ativa, faz a leitura do acelerômetro
   if (isReading) {
-    // Lê dados do acelerômetro
     sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
+    mpu.getEvent(&a, &g, &temp); // Lê os dados do acelerômetro
+    
+    // Armazena os dados
     accelX = a.acceleration.x;
     accelY = a.acceleration.y;
     accelZ = a.acceleration.z;
 
-    // Acumula as leituras
+    // Acumula os dados para calcular médias
     accelX_sum += accelX;
     accelY_sum += accelY;
     accelZ_sum += accelZ;
-    measurement_count++;
+    measurement_count++; // Incrementa a contagem de medições
 
-    // Cálculo da média
-    if (measurement_count > 0) {
-      accelX_avg = accelX_sum / measurement_count;
-      accelY_avg = accelY_sum / measurement_count;
-      accelZ_avg = accelZ_sum / measurement_count;
-    }
-
-    // Cálculo da ARE
-    ARE = sqrt(accelX_avg * accelX_avg + accelY_avg * accelY_avg + accelZ_avg * accelZ_avg);
-
-    // Cálculo da AREN com a correção
-    AREN = ARE * sqrt(T_0 / Texp);  // Correção pela referência de tempo T_0
-
-    // Cálculo de Dy
-    Dy = AREN * pow(Texp, -1.06); // Cálculo conforme a norma
-
-    // Verifica se os limites foram ultrapassados
-    if (AREN > LIMITE_AREN_HAV) {
-      Serial.println("ALERTA: AREN para Mãos e Braços ultrapassou o limite!");
-    }
-    if (AREN > LIMITE_AREN_WBV) {
-      Serial.println("ALERTA: AREN para Corpo Inteiro ultrapassou o limite!");
-    }
-    
-    // Reset de contagem após um minuto
-    if (countdown_active && (millis() - countdown_start_time) / 1000 >= countdown_time) {
-      isReading = false; // Para a leitura
-      countdown_active = false; // Para a contagem regressiva
-      Serial.println("Contagem regressiva finalizada, leitura parada.");
+    // Atualiza a contagem regressiva
+    if (countdown_active) {
+      unsigned long elapsed_time = (millis() - countdown_start_time) / 1000; // Tempo decorrido em segundos
+      countdown_time = countdown_time - elapsed_time;
+      countdown_start_time = millis(); // Reinicia o tempo de contagem
+      if (countdown_time <= 0) {
+        isReading = false; // Para a leitura
+        countdown_active = false; // Para a contagem
+        countdown_time = 60; // Reseta a contagem para 60 segundos
+      }
     }
   }
 }
-
