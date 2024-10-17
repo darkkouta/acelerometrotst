@@ -20,7 +20,7 @@
   - Cálculo automático de médias e envio em JSON.
   - Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
 
-  Github: *Link do Projeto no GitHub (opcional)*
+  Github: https://github.com/darkkouta/acelerometrotst
   -------------------------------
 */
 #include <Wire.h>
