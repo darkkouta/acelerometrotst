@@ -1,61 +1,56 @@
-Acelerômetro - Monitoramento e Cálculo de Vibração
-Este projeto tem como objetivo monitorar e analisar dados de vibração capturados por um acelerômetro MPU6050, exibindo as informações em tempo real através de uma interface web. O sistema foi desenvolvido para calcular e alertar sobre condições de vibração perigosas, tanto para mãos e braços (HAV) quanto para corpo inteiro (WBV). Abaixo estão as principais funcionalidades e o status atual do desenvolvimento.
+# Acelerômetro - Monitoramento e Cálculo de Vibração
 
-Funcionalidades
-Monitoramento em Tempo Real:
+Este programa foi desenvolvido para monitorar as leituras de aceleração em tempo real usando um acelerômetro MPU6050 e exibi-las através de uma interface web. O sistema calcula métricas como:
 
-Leitura contínua das acelerações nos eixos X, Y e Z.
-Cálculo de Aceleração Resultante de Exposição (ARE):
+- Aceleração resultante de exposição para mãos e braços (ARE).
+- Aceleração normalizada de exposição (AREN).
+- O fator Dy para estimar a exposição que pode levar ao aparecimento de dedos brancos.
+- Médias das acelerações ao longo de um minuto.
+- Alerta de conformidade com as normas NHO.
 
-Para mãos e braços (HAV).
-Aceleração Resultante de Exposição Normalizada (AREN):
+O usuário pode ajustar o tempo de exposição (Texp) via interface web, além de iniciar e parar a coleta de dados manualmente.
 
-Para mãos e braços (HAV), calculada com base na aceleração medida e no tempo de exposição ajustável pelo usuário. O cálculo de AREN para corpo inteiro (WBV) está em desenvolvimento.
-Fator Dy:
+## Funcionalidades
 
-Estima o risco de desenvolvimento da síndrome de dedos brancos (causada por vibrações nas mãos e braços).
-Cálculo de Médias:
+- Interface web para visualização e controle.
+- Cálculo automático de médias e envio em JSON.
+- Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
 
-Média das acelerações em cada eixo ao longo de um minuto.
-Alertas de Segurança:
+## Dependências
 
-Alertas se os níveis de exposição vibratória ultrapassarem os limites recomendados pela norma NHO-10.
-Interface Web:
+Para compilar este código, você precisará das seguintes bibliotecas:
 
-Interface amigável para controle e visualização dos dados capturados. O usuário pode iniciar/parar medições e ajustar o tempo de exposição diretamente pela página web.
-Funcionalidades em Desenvolvimento
-Exposição para Corpo Inteiro (WBV):
+- **Wire**: Para comunicação I2C.
+- **Adafruit_MPU6050**: Biblioteca para o acelerômetro MPU6050.
+- **WiFi**: Para a conectividade sem fio.
+- **WebServer**: Para criar um servidor web.
 
-O cálculo de aceleração resultante para exposição de corpo inteiro está em desenvolvimento e será incluído em futuras atualizações.
-Filtros de Ruído:
+## Configuração de Wi-Fi
 
-Implementação de filtros digitais para melhorar a precisão das leituras e eliminar ruídos indesejados nas medições.
-Como Utilizar
-Configurar o Projeto:
+O programa cria uma rede Wi-Fi (ponto de acesso) sem senha, permitindo que dispositivos se conectem e acessem a interface web. O nome da rede e a senha podem ser definidos nas constantes `ap_ssid` e `ap_password`.
 
-Clone o repositório para o seu ambiente local.
-Instale as bibliotecas necessárias, como Adafruit_MPU6050 e WiFi para ESP32.
-Compilar e Fazer Upload:
+## Uso
 
-Compile o código e faça o upload para um ESP32 com um MPU6050 conectado.
-Conecte-se à Rede:
+1. **Conexão**: Conecte seu dispositivo à rede Wi-Fi criada pelo programa.
+2. **Acesso à interface**: Abra um navegador e acesse o IP exibido no monitor serial (normalmente `192.168.4.1`).
+3. **Ajuste o Tempo de Exposição**: Use a interface para definir o tempo de exposição (Texp) em horas.
+4. **Iniciar Parar Leituras**: Inicie ou pare as leituras de aceleração através da interface.
 
-Após carregar o código, o ESP32 iniciará como ponto de acesso com o nome Acelerometro_AP. Conecte-se a essa rede para acessar a interface web.
-Acessar a Interface Web:
+## Observações
 
-Abra um navegador e acesse o IP exibido no monitor serial para visualizar os dados e controlar o sistema.
-Parâmetros Ajustáveis
-Tmexp (Tempo de Exposição):
-O usuário pode ajustar o tempo de medição diretamente pela interface web. O valor padrão é de 1 hora, e pode ser alterado para atender aos requisitos específicos da medição.
-Alerta de Segurança
-O sistema exibirá alertas de segurança quando as medições excederem os limites recomendados para a exposição vibratória:
-HAV (Mãos e Braços): Limite de AREN de 5 m/s².
-WBV (Corpo Inteiro): Limite de AREN de 1,15 m/s² (em desenvolvimento).
-Tecnologias Utilizadas
-ESP32: Microcontrolador utilizado para processar os dados e hospedar a interface web.
-MPU6050: Acelerômetro de 6 eixos para capturar as leituras de aceleração.
-WiFi: Conexão sem fio para permitir o acesso à interface web.
-HTML, CSS, JavaScript: Interface web responsiva para visualização em tempo real.
+- A funcionalidade de cálculo da aceleração normalizada de exposição para corpo inteiro está em desenvolvimento.
+- Filtros adicionais para melhorar a precisão das medições estão sendo planejados.
 
-Licença
-Este projeto é de código aberto sob a licença MIT. Veja o arquivo LICENSE para mais detalhes.
+## Contribuições
+
+Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou pull requests.
+
+## Licença
+
+Este projeto é licenciado sob a Licença MIT. Veja o arquivo LICENSE para mais detalhes.
+
+## Contato
+
+Para mais informações, consulte o repositório do projeto no GitHub https://github.com/darkkouta/acelerometrotst ou entre em contato.
+
+
