@@ -1,25 +1,3 @@
-
-/*
-  -----------------------------
-  Acelerômetro - Monitoramento e Cálculo de Vibração
-  -----------------------------
-  Este programa foi desenvolvido para monitorar as leituras de aceleração 
-  em tempo real usando um acelerômetro MPU6050 e exibi-las através de uma 
-  interface web. O sistema calcula métricas como:
-
-  - Aceleração resultante de exposição para mãos e braços (ARE).
-  - Aceleração normalizada de exposição (AREN).
-  - O fator Dy para estimar a exposição que pode levar ao aparecimento de dedos brancos.
-  - Médias das acelerações ao longo de um minuto.
-  - Alerta de conformidade com as normas NHO.
-
-  Funcionalidades adicionais incluem:
-  - Interface web para visualização e controle.
-  - Cálculo automático de médias e envio em JSON.
-  - Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
-  -------------------------------
-*/
-
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <WiFi.h>
@@ -51,7 +29,7 @@ unsigned long measurement_start_time = 0;
 bool isReading = false; // Estado da leitura
 
 // Temporizador
-unsigned long countdown_time = 60;  // Tempo de medição em segundos (1 minuto)
+unsigned long countdown_time = 30;  // Tempo de medição em segundos (30 segundos)
 unsigned long countdown_start_time = 0;
 bool countdown_active = false;
 
@@ -140,7 +118,7 @@ const char* htmlPage = R"rawliteral(
   </form>
 
   <h3>Contagem Regressiva</h3>
-  <p id="countdown">60 segundos restantes</p>
+  <p id="countdown">30 segundos restantes</p>
 </body>
 </html>
 )rawliteral";
@@ -172,85 +150,107 @@ void setup() {
                  ",\"alertaWBV\":\"" + (AREN > LIMITE_AREN_WBV ? "Exposição excessiva para WBV!" : "Dentro do limite para WBV!") + "\"}");
   });
 
-  // Rota para ajustar Texp
   server.on("/set_time", HTTP_POST, []() {
-    if (server.arg("Texp") != "") {
-      Texp = server.arg("Texp").toFloat(); // Converte o valor de Texp para float
+    if (server.hasArg("Texp")) {
+      Texp = server.arg("Texp").toFloat();
     }
-    server.sendHeader("Location", "/"); // Redireciona para a página principal
-    server.send(302, "text/plain", ""); // Responde com redirecionamento
+    server.sendHeader("Location", "/");
+    server.send(303);
   });
 
-  // Rota para configurar Wi-Fi
   server.on("/set_wifi", HTTP_POST, []() {
-    String ssid = server.arg("ssid");
-    String password = server.arg("password");
-    WiFi.begin(ssid.c_str(), password.c_str()); // Conecta à rede Wi-Fi
-    server.sendHeader("Location", "/"); // Redireciona para a página principal
-    server.send(302, "text/plain", ""); // Responde com redirecionamento
-  });
-
-  // Rota para iniciar/parar as leituras
-  server.on("/start_stop", HTTP_POST, []() {
-    isReading = !isReading; // Alterna o estado de leitura
-    if (isReading) {
-      measurement_start_time = millis(); // Marca o tempo de início
-      measurement_count = 0; // Reinicia a contagem
-      accelX_sum = 0; // Reinicia a soma
-      accelY_sum = 0; // Reinicia a soma
-      accelZ_sum = 0; // Reinicia a soma
-      countdown_active = true; // Ativa a contagem regressiva
-      countdown_start_time = millis(); // Inicia o tempo
-    } else {
-      countdown_active = false; // Desativa a contagem regressiva
-      // Calcula a média final
-      if (measurement_count > 0) {
-        accelX_avg = accelX_sum / measurement_count;
-        accelY_avg = accelY_sum / measurement_count;
-        accelZ_avg = accelZ_sum / measurement_count;
-        // Cálculo de ARE e AREN
-        ARE = sqrt(pow(accelX_avg, 2) + pow(accelY_avg, 2) + pow(accelZ_avg, 2));
-        AREN = ARE * (Texp / T_0);
-        // Cálculo de Dy
-        Dy = AREN * pow(Texp, -1.06); // Cálculo de Dy com expoente -1.06
-      }
+    if (server.hasArg("ssid") && server.hasArg("password")) {
+      const char* ssid = server.arg("ssid").c_str();
+      const char* password = server.arg("password").c_str();
+      WiFi.begin(ssid, password);
+      server.sendHeader("Location", "/");
+      server.send(303);
     }
-    server.sendHeader("Location", "/"); // Redireciona para a página principal
-    server.send(302, "text/plain", ""); // Responde com redirecionamento
   });
 
-  server.begin(); // Inicia o servidor
+  server.on("/start_stop", HTTP_POST, []() {
+    isReading = !isReading; // Inverte o estado de leitura
+    if (isReading) {
+      measurement_start_time = millis(); // Armazena o tempo de início
+      countdown_start_time = millis(); // Inicia a contagem regressiva
+      countdown_active = true;
+    } else {
+      // Reseta os valores após parar a leitura
+      resetMeasurement();
+    }
+    server.sendHeader("Location", "/");
+    server.send(303);
+  });
+
+  server.begin();
 }
 
 void loop() {
-  server.handleClient(); // Mantém o servidor ativo
+  server.handleClient();
   
-  // Se a leitura estiver ativa, faz a leitura do acelerômetro
+  // Atualiza os dados a cada leitura se a leitura estiver ativa
   if (isReading) {
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp); // Lê os dados do acelerômetro
-    
-    // Armazena os dados
-    accelX = a.acceleration.x;
-    accelY = a.acceleration.y;
-    accelZ = a.acceleration.z;
-
-    // Acumula os dados para calcular médias
-    accelX_sum += accelX;
-    accelY_sum += accelY;
-    accelZ_sum += accelZ;
-    measurement_count++; // Incrementa a contagem de medições
-
-    // Atualiza a contagem regressiva
+    readSensorData();
+    delay(500); // Tempo entre leituras
     if (countdown_active) {
-      unsigned long elapsed_time = (millis() - countdown_start_time) / 1000; // Tempo decorrido em segundos
+      // Atualiza a contagem regressiva
+      unsigned long elapsed_time = (millis() - countdown_start_time) / 1000; // Tempo passado em segundos
       countdown_time = countdown_time - elapsed_time;
-      countdown_start_time = millis(); // Reinicia o tempo de contagem
+
+      // Se a contagem regressiva terminar, para a leitura e reseta
       if (countdown_time <= 0) {
-        isReading = false; // Para a leitura
-        countdown_active = false; // Para a contagem
-        countdown_time = 60; // Reseta a contagem para 60 segundos
+        isReading = false;
+        resetMeasurement();
+        countdown_active = false;
+        countdown_time = 30; // Reseta para 30 segundos
+      } else {
+        countdown_start_time = millis(); // Reseta o tempo de início da contagem
       }
     }
   }
+}
+
+// Função para ler os dados do acelerômetro
+void readSensorData() {
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+  
+  // Atualiza os valores de aceleração
+  accelX = a.acceleration.x;
+  accelY = a.acceleration.y;
+  accelZ = a.acceleration.z;
+
+  // Soma os valores de aceleração para cálculo da média
+  accelX_sum += accelX;
+  accelY_sum += accelY;
+  accelZ_sum += accelZ;
+  measurement_count++;
+
+  // Calcula a média
+  accelX_avg = accelX_sum / measurement_count;
+  accelY_avg = accelY_sum / measurement_count;
+  accelZ_avg = accelZ_sum / measurement_count;
+
+  // Calcula a Aceleração Resultante de Exposição (ARE)
+  ARE = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
+  
+  // Normaliza a ARE em relação ao tempo de exposição (Texp)
+  AREN = ARE / (Texp / T_0);
+
+  // Cálculo de Dy
+  Dy = pow(AREN, -1.06);
+}
+
+// Função para resetar os valores de medição
+void resetMeasurement() {
+  accelX_sum = 0.0;
+  accelY_sum = 0.0;
+  accelZ_sum = 0.0;
+  measurement_count = 0;
+  accelX_avg = 0.0;
+  accelY_avg = 0.0;
+  accelZ_avg = 0.0;
+  ARE = 0.0;
+  AREN = 0.0;
+  Dy = 0.0;
 }
