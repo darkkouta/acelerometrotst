@@ -1,28 +1,3 @@
-/*
-  -----------------------------
-  Acelerômetro - Monitoramento e Cálculo de Vibração
-  -----------------------------
-  Este programa foi desenvolvido para monitorar as leituras de aceleração 
-  em tempo real usando um acelerômetro MPU6050 e exibi-las através de uma 
-  interface web. O sistema calcula métricas como:
-
-  - Aceleração resultante de exposição para mãos e braços (ARE).
-  - Aceleração normalizada de exposição para corpo inteiro em desenvolvimento.
-  - O fator Dy para estimar a exposição que pode levar ao aparecimento de dedos brancos.
-  - Médias das acelerações ao longo de um minuto.
-  - Alerta de conformidade com as normas NHO.
-
-  O usuário pode ajustar o tempo de medição (Tmexp) via interface web, 
-  além de iniciar e parar a coleta de dados manualmente.
-
-  Funcionalidades adicionais incluem:
-  - Interface web para visualização e controle.
-  - Cálculo automático de médias e envio em JSON.
-  - Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
-
-  Github: https://github.com/darkkouta/acelerometrotst
-  -------------------------------
-*/
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <WiFi.h>
@@ -41,9 +16,9 @@ Adafruit_MPU6050 mpu;
 
 // Variáveis para o cálculo de vibração
 float ARE = 0.0;  // Aceleração resultante de exposição 
-float AREN = 0.0; // Aceleração resultante de exposição normalizada
+float AREN = 0.0; // Aceleração normalizada de exposição
 const float T_0 = 8.0; // Tempo de referência de 8 horas
-float Tmed = 1.0;  // Valor inicial de Tmed em horas (pode ser alterado via web)
+float Texp = 1.0;  // Valor inicial de Texp em horas (pode ser alterado via web)
 
 // Variáveis para armazenar os dados lidos do acelerômetro
 float accelX = 0.0;
@@ -71,7 +46,7 @@ float Dy = 0.0; // Cálculo de Dy com expoente -1.06
 const float LIMITE_AREN_HAV = 5.0;  // Limite de AREN para mãos e braços (HAV)
 const float LIMITE_AREN_WBV = 1.15; // Limite de AREN para corpo inteiro (WBV)
 
-// HTML da página web com formulário para alterar o Tmed
+// HTML da página web com formulário para alterar o Texp
 const char* htmlPage = R"rawliteral(
 <!DOCTYPE HTML>
 <html lang="pt-BR">
@@ -82,7 +57,7 @@ const char* htmlPage = R"rawliteral(
     body { text-align: center; font-family: Arial, sans-serif; }
     table { margin: 0 auto; border-collapse: collapse; }
     table, th, td { border: 1px solid black; padding: 10px; }
-    input[type="number"] { padding: 5px; }
+    input[type="number"], input[type="submit"] { padding: 5px; }
   </style>
   <script>
     function updateData() {
@@ -98,7 +73,7 @@ const char* htmlPage = R"rawliteral(
         document.getElementById('ARE').innerText = data.ARE.toFixed(2) + " m/s² ";
         document.getElementById('AREN').innerText = data.AREN.toFixed(2) + " m/s² ";
         document.getElementById('Dy').innerText = data.Dy.toFixed(2) + " (Dy - Aparecimento de Dedos Brancos anos)";
-        document.getElementById('Tmed').innerText = data.Tmed.toFixed(2) + " horas";
+        document.getElementById('Texp').innerText = data.Texp.toFixed(2) + " horas";
         document.getElementById('alertaHAV').innerText = data.alertaHAV;
         document.getElementById('alertaWBV').innerText = data.alertaWBV;
         document.getElementById('countdown').innerText = data.countdown + " segundos restantes";
@@ -122,164 +97,133 @@ const char* htmlPage = R"rawliteral(
   <p>Média Y: <span id="accelY_avg">0.00 m/s²</span></p>
   <p>Média Z: <span id="accelZ_avg">0.00 m/s²</span></p>
 
-  <p>ARE : <span id="ARE">0.00 m/s²</span></p>
-  <p>AREN : <span id="AREN">0.00 m/s²</span></p>
+  <p>ARE: <span id="ARE">0.00 m/s²</span></p>
+  <p>AREN: <span id="AREN">0.00 m/s²</span></p>
   <p>Dy: <span id="Dy">0.00</span></p>
-  <p>Tmed: <span id="Tmed">0.00 horas</span></p>
-
-  <p id="alertaHAV" style="color:red;"></p>
-  <p id="alertaWBV" style="color:red;"></p>
+  <p>Texp: <span id="Texp">0.00 horas</span></p>
   
-  <p id="countdown" style="font-weight:bold;">Tempo restante: 60 segundos</p>
-
-  <form action="/setTmed" method="POST">
-    <label for="tmed">Definir Tempo de exposição (horas):</label><br>
-    <input type="number" id="tmed" name="tmed" value="1" min="0.01" step="0.01"><br><br>
-    <input type="submit" value="Atualizar Texp">
+  <p id="alertaHAV"></p>
+  <p id="alertaWBV"></p>
+  
+  <h3>Ajuste do Tempo de Exposição (Texp)</h3>
+  <form action="/set_time" method="POST">
+    <input type="number" name="Texp" min="0.1" max="24.0" step="0.1" value="1.0">
+    <input type="submit" value="Ajustar">
   </form>
 
-  <form action="/toggle" method="POST">
+  <h3>Controle de Leitura</h3>
+  <form action="/start_stop" method="POST">
     <input type="submit" value="Iniciar/Parar Leituras">
   </form>
 
+  <h3>Contagem Regressiva</h3>
+  <p id="countdown">60 segundos restantes</p>
 </body>
 </html>
 )rawliteral";
 
-// Declaração das funções antes da função setup
-void handleRoot();
-void handleData();
-void handleSetTmed();
-void handleToggle();
-
+// Funções para inicialização e loop
 void setup() {
-  Serial.begin(115200);  // Inicializa o Monitor Serial
-  
-  // Configura o modo de ponto de acesso (sem senha)
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(ap_ssid);  // Sem senha, rede aberta
-  
-  // Exibe o IP do AP no Monitor Serial
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.softAPIP());
-
-  // Inicializa o acelerômetro
-  Wire.begin();
+  Serial.begin(115200);
+  // Inicialização do acelerômetro
   if (!mpu.begin()) {
     Serial.println("Falha ao inicializar MPU6050");
     while (1);
   }
+  
+  // Inicia a rede Wi-Fi
+  WiFi.softAP(ap_ssid, ap_password);
+  Serial.println("Rede Wi-Fi iniciada");
+  
+  // Define rotas para o servidor web
+  server.on("/", []() {
+    server.send(200, "text/html", htmlPage);
+  });
+  
+  server.on("/data", []() {
+    server.send(200, "application/json", String("{\"accelX\":") + accelX + ",\"accelY\":" + accelY + ",\"accelZ\":" + accelZ +
+                 ",\"accelX_avg\":" + accelX_avg + ",\"accelY_avg\":" + accelY_avg + ",\"accelZ_avg\":" + accelZ_avg +
+                 ",\"ARE\":" + ARE + ",\"AREN\":" + AREN + ",\"Dy\":" + Dy +
+                 ",\"Texp\":" + Texp + ",\"countdown\":" + (countdown_active ? (countdown_time - (millis() - countdown_start_time) / 1000) : countdown_time) +
+                 ",\"alertaHAV\":\"" + (AREN > LIMITE_AREN_HAV ? "ALERTA: Aceleração para Mãos e Braços ultrapassou o limite!" : "") +
+                 "\",\"alertaWBV\":\"" + (AREN > LIMITE_AREN_WBV ? "ALERTA: Aceleração para Corpo Inteiro ultrapassou o limite!" : "") + "\"}");
+  });
+  
+  server.on("/set_time", HTTP_POST, []() {
+    if (server.hasArg("Texp")) {
+      Texp = server.arg("Texp").toFloat();
+      Serial.print("Tempo de exposição ajustado: ");
+      Serial.println(Texp);
+    }
+    server.send(200, "text/html", htmlPage); // Redireciona de volta para a página
+  });
 
-  // Configura a sensibilidade para 2g
-  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
-
-  // Manipuladores de requisição web
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/data", HTTP_GET, handleData);
-  server.on("/setTmed", HTTP_POST, handleSetTmed); // Manipulador para atualizar o Tmed
-  server.on("/toggle", HTTP_POST, handleToggle); // Manipulador para iniciar/parar leituras
+  server.on("/start_stop", HTTP_POST, []() {
+    isReading = !isReading; // Alterna o estado de leitura
+    if (isReading) {
+      Serial.println("Leitura iniciada");
+      measurement_start_time = millis();
+      measurement_count = 0; // Reseta a contagem
+      accelX_sum = 0.0;
+      accelY_sum = 0.0;
+      accelZ_sum = 0.0;
+      countdown_start_time = millis(); // Inicia a contagem
+      countdown_active = true; // Ativa a contagem regressiva
+    } else {
+      Serial.println("Leitura parada");
+      countdown_active = false; // Para a contagem regressiva
+    }
+    server.send(200, "text/html", htmlPage); // Redireciona de volta para a página
+  });
+  
   server.begin();
-
-  Serial.println("Servidor iniciado. Acesse a página pelo IP mostrado acima.");
-}
-
-void handleRoot() {
-  server.send(200, "text/html", htmlPage);
-}
-
-void handleData() {
-  if (!isReading) {
-    server.send(200, "application/json", "{}");
-    return;
-  }
-
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
-
-  // Acelerações em m/s²
-  accelX = a.acceleration.x;
-  accelY = a.acceleration.y;
-  accelZ = a.acceleration.z;
-
-  // Soma as acelerações para calcular a média
-  accelX_sum += accelX;
-  accelY_sum += accelY;
-  accelZ_sum += accelZ;
-  measurement_count++;
-
-  // Calcula a média das acelerações
-  accelX_avg = accelX_sum / measurement_count;
-  accelY_avg = accelY_sum / measurement_count;
-  accelZ_avg = accelZ_sum / measurement_count;
-
-  // Calcula o RMS (Raiz quadrada da média dos quadrados) da aceleração para mãos e braços
-  ARE = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
-  AREN = ARE * sqrt(Tmed / T_0);
-
-  // Calcula o Dy (dedos brancos)
-  Dy = pow(ARE / AREN, -1.06);
-
-  // Verifica se as leituras estão acima dos limites da norma NHO-10
-  String alertaHAV = (AREN > LIMITE_AREN_HAV) ? "Alerta! Exposição VMB acima do limite!" : "Exposição VMB dentro do limite.";
-  String alertaWBV = (AREN > LIMITE_AREN_WBV) ? "Alerta! Exposição VCI acima do limite!" : "Exposição VCI dentro do limite.";
-
-  // Calcula o tempo restante
-  unsigned long elapsed_time = (millis() - countdown_start_time) / 1000;
-  unsigned long countdown = countdown_time - elapsed_time;
-  if (countdown <= 0) {
-    countdown = 0;
-    isReading = false; // Para a leitura ao final do tempo
-  }
-
-  // Envia os dados em formato JSON para a página
-  String jsonData = "{";
-  jsonData += "\"accelX\":" + String(accelX) + ",";
-  jsonData += "\"accelY\":" + String(accelY) + ",";
-  jsonData += "\"accelZ\":" + String(accelZ) + ",";
-  jsonData += "\"accelX_avg\":" + String(accelX_avg) + ",";
-  jsonData += "\"accelY_avg\":" + String(accelY_avg) + ",";
-  jsonData += "\"accelZ_avg\":" + String(accelZ_avg) + ",";
-  jsonData += "\"ARE\":" + String(ARE) + ",";
-  jsonData += "\"AREN\":" + String(AREN) + ",";
-  jsonData += "\"Dy\":" + String(Dy) + ",";
-  jsonData += "\"Tmed\":" + String(Tmed) + ",";
-  jsonData += "\"alertaHAV\":\"" + alertaHAV + "\",";
-  jsonData += "\"alertaWBV\":\"" + alertaWBV + "\",";
-  jsonData += "\"countdown\":" + String(countdown);
-  jsonData += "}";
-
-  server.send(200, "application/json", jsonData);
-}
-
-void handleSetTmed() {
-  if (server.hasArg("tmed")) {
-    Tmed = server.arg("tmed").toFloat();
-    Serial.print("Tmed atualizado para ");
-    Serial.println(Tmed);
-  }
-  server.sendHeader("Location", "/");
-  server.send(303);
-}
-
-void handleToggle() {
-  isReading = !isReading;
-  if (isReading) {
-    // Reinicia os valores de somatório e contador
-    accelX_sum = 0.0;
-    accelY_sum = 0.0;
-    accelZ_sum = 0.0;
-    measurement_count = 0;
-    
-    // Inicia o temporizador de contagem regressiva
-    countdown_start_time = millis();
-    Serial.println("Leitura iniciada.");
-  } else {
-    Serial.println("Leitura parada.");
-  }
-  server.sendHeader("Location", "/");
-  server.send(303);
+  Serial.println("Servidor web iniciado");
 }
 
 void loop() {
-  server.handleClient();  // Processa as requisições
+  server.handleClient();
+
+  if (isReading) {
+    // Lê dados do acelerômetro
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+    accelX = a.acceleration.x;
+    accelY = a.acceleration.y;
+    accelZ = a.acceleration.z;
+
+    // Acumula as leituras
+    accelX_sum += accelX;
+    accelY_sum += accelY;
+    accelZ_sum += accelZ;
+    measurement_count++;
+
+    // Cálculo da média
+    if (measurement_count > 0) {
+      accelX_avg = accelX_sum / measurement_count;
+      accelY_avg = accelY_sum / measurement_count;
+      accelZ_avg = accelZ_sum / measurement_count;
+    }
+
+    // Cálculo de ARE e AREN
+    ARE = sqrt(accelX_avg * accelX_avg + accelY_avg * accelY_avg + accelZ_avg * accelZ_avg);
+    AREN = ARE / T_0;  // Normaliza pela referência de tempo T_0
+
+    // Cálculo de Dy
+    Dy = AREN * pow(Texp, -1.06); // Cálculo conforme a norma
+
+    // Verifica se os limites foram ultrapassados
+    if (AREN > LIMITE_AREN_HAV) {
+      Serial.println("ALERTA: AREN para Mãos e Braços ultrapassou o limite!");
+    }
+    if (AREN > LIMITE_AREN_WBV) {
+      Serial.println("ALERTA: AREN para Corpo Inteiro ultrapassou o limite!");
+    }
+    
+    // Reset de contagem após um minuto
+    if (countdown_active && (millis() - countdown_start_time) / 1000 >= countdown_time) {
+      isReading = false; // Para a leitura
+      countdown_active = false; // Para a contagem regressiva
+      Serial.println("Contagem regressiva finalizada, leitura parada.");
+    }
+  }
 }
