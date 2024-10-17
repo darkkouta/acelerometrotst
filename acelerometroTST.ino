@@ -1,3 +1,23 @@
+/*
+  -----------------------------
+  Acelerômetro - Monitoramento e Cálculo de Vibração
+  -----------------------------
+  Este programa foi desenvolvido para monitorar as leituras de aceleração 
+  em tempo real usando um acelerômetro MPU6050 e exibi-las através de uma 
+  interface web. O sistema calcula métricas como:
+
+  - Aceleração resultante de exposição para mãos e braços (ARE).
+  - Aceleração normalizada de exposição (AREN).
+  - O fator Dy para estimar a exposição que pode levar ao aparecimento de dedos brancos.
+  - Médias das acelerações ao longo de um minuto.
+  - Alerta de conformidade com as normas NHO.
+
+  Funcionalidades adicionais incluem:
+  - Interface web para visualização e controle.
+  - Cálculo automático de médias e envio em JSON.
+  - Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
+  -------------------------------
+*/
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <WiFi.h>
@@ -146,8 +166,8 @@ void setup() {
                  ",\"accelX_avg\":" + accelX_avg + ",\"accelY_avg\":" + accelY_avg + ",\"accelZ_avg\":" + accelZ_avg +
                  ",\"ARE\":" + ARE + ",\"AREN\":" + AREN + ",\"Dy\":" + Dy +
                  ",\"Texp\":" + Texp + ",\"countdown\":" + countdown_time +
-                 ",\"alertaHAV\":\"" + (AREN > LIMITE_AREN_HAV ? "Exposição excessiva para HAV!" : "Dentro do limite para HAV!") + "\"" +
-                 ",\"alertaWBV\":\"" + (AREN > LIMITE_AREN_WBV ? "Exposição excessiva para WBV!" : "Dentro do limite para WBV!") + "\"}");
+                 ",\"alertaHAV\":\"" + (AREN > LIMITE_AREN_HAV ? "Exposição excessiva para VMB!" : "Dentro do limite para VMB!") + "\"" +
+                 ",\"alertaWBV\":\"" + (AREN > LIMITE_AREN_WBV ? "Exposição excessiva para VCI" : "Dentro do limite para VCI!") + "\"}");
   });
 
   server.on("/set_time", HTTP_POST, []() {
@@ -235,10 +255,10 @@ void readSensorData() {
   ARE = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
   
   // Normaliza a ARE em relação ao tempo de exposição (Texp)
-  AREN = ARE / (Texp / T_0);
+  AREN = ARE * sqrt(8 / Texp);
 
   // Cálculo de Dy
-  Dy = pow(AREN, -1.06);
+  Dy = 31.8 * pow(AREN, -1.06);
 }
 
 // Função para resetar os valores de medição
