@@ -60,8 +60,8 @@ bool isReading = false;            // Estado da leitura
 // ----------------------------------------------------
 const char* ssid_ap = "Acelerometro"; // Nome do ponto de acesso
 const char* password_ap = "";         // Senha do ponto de acesso
-const char* ssid_sta = "Senua";       // Nome da rede Wi-Fi
-const char* password_sta = "Agape2024@#"; // Senha da rede Wi-Fi
+const char* ssid_sta = "Suarede";       // Nome da rede Wi-Fi
+const char* password_sta = "suasenha"; // Senha da rede Wi-Fi
 
 WebServer server; // Instância do servidor
 
