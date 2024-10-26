@@ -2,18 +2,18 @@ O projeto de monitoramento e cálculo de vibração utilizando o acelerômetro M
 
 Componentes necessários:
 ESP32 Doit Devkit ESP32-WROOM-32
-MPU6050 (Acelerômetro + Giroscópio)
+ADXL345 Acelerometro
 Jumpers
 Fonte de alimentação (ou via USB)
 Esquema de ligação:
 Alimentação:
 
-Conecte o VCC do MPU6050 ao pino 3.3V do ESP32.
-Conecte o GND do MPU6050 ao GND do ESP32.
+Conecte o VCC do ADXL345 ao pino 3.3V do ESP32.
+Conecte o GND do ADXL345 ao GND do ESP32.
 Comunicação I2C:
 
-Conecte o pino SCL do MPU6050 ao pino 22 do ESP32.
-Conecte o pino SDA do MPU6050 ao pino 21 do ESP32.
+Conecte o pino SCL do ADXL345 ao pino 22 do ESP32.
+Conecte o pino SDA do ADXL345 ao pino 21 do ESP32.
 Resumo de conexão:
 MPU6050	ESP32
 VCC	3.3V
@@ -28,20 +28,20 @@ O sistema também oferece uma interface web para visualizar as leituras de acele
 
 Componentes necessários:
 ESP32 Doit Devkit ESP32-WROOM-32
-MPU6050 (Acelerômetro + Giroscópio)
+ADXL345 Acelerômetro
 Jumpers
 Fonte de alimentação (ou via USB)
 Esquema de ligação:
 Alimentação:
 
-Conecte o VCC do MPU6050 ao pino 3.3V do ESP32.
-Conecte o GND do MPU6050 ao GND do ESP32.
+Conecte o VCC do ADXL345 ao pino 3.3V do ESP32.
+Conecte o GND do ADXL345 ao GND do ESP32.
 Comunicação I2C:
 
-Conecte o pino SCL do MPU6050 ao pino 22 do ESP32.
-Conecte o pino SDA do MPU6050 ao pino 21 do ESP32.
+Conecte o pino SCL do ADXL345 ao pino 22 do ESP32.
+Conecte o pino SDA do ADXL345 ao pino 21 do ESP32.
 Resumo de conexão:
-MPU6050	ESP32
+ADXL345	ESP32
 VCC	3.3V
 GND	GND
 SCL	GPIO 22
