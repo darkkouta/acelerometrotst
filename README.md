@@ -1,51 +1,47 @@
-Acelerômetro - Monitoramento e Cálculo de Vibração
-Este programa foi desenvolvido para monitorar as leituras de aceleração em tempo real usando um acelerômetro MPU6050 e exibi-las através de uma interface web. O sistema calcula métricas como:
-
-Aceleração resultante de exposição para mãos e braços (ARE).
-Aceleração normalizada de exposição (AREN).
-O fator 
-𝐷
-𝑦
-Dy para estimar a exposição que pode levar ao aparecimento de dedos brancos.
-Médias das acelerações ao longo de um minuto.
-Alerta de conformidade com as normas NHO.
-O usuário pode ajustar o tempo de exposição (Texp) via interface web, além de iniciar e parar a coleta de dados manualmente.
+Sistema de Monitoramento de Vibração com ADXL345 e ESP32
+Descrição
+Este projeto implementa um sistema de monitoramento de vibração utilizando o sensor ADXL345 e um microcontrolador ESP32. O sistema lê dados de aceleração e giroscópio e oferece uma interface web para visualização e ajuste de parâmetros de medição. O sistema permite a configuração de filtros de ponderação e oferece funcionalidades para ajuste de tempo de exposição (Texp), que influencia o cálculo de parâmetros como ARE, AREN e Dy, baseados nas normas de vibração.
 
 Funcionalidades
-Interface web para visualização e controle.
-Cálculo automático de médias e envio em JSON.
-Alerta de segurança se os níveis de vibração ultrapassarem os limites recomendados.
-Dependências
-Para compilar este código, você precisará das seguintes bibliotecas:
+Leitura e processamento de dados de aceleração do ADXL345.
+Interface web para visualização dos dados de vibração em tempo real.
+Ajuste automático de offsets e calibração inicial do giroscópio.
+Ajuste configurável do tempo de exposição (Texp) pela interface web.
+Cálculos de parâmetros de vibração como ARE, AREN, AM, AMR, AREP, VDVR, CF, AMJ, PICO e VDVEXP.
+Filtros de ponderação WB, WC, WD, WE, WF, WH, WJ, WK e WM para análise de vibração em corpo inteiro e mão/braço.
+Configuração de unidade de medida entre m/s² e g.
+Esquema de Ligação
+Materiais Necessários
+ESP32
+Sensor ADXL345
+Fios de conexão
+Conexões
+ADXL345 VCC → ESP32 3V3
+ADXL345 GND → ESP32 GND
+ADXL345 SDA → ESP32 GPIO 21 (SDA)
+ADXL345 SCL → ESP32 GPIO 22 (SCL)
+Diagrama
+plaintext
 
-Wire: Para comunicação I2C.
-Adafruit_MPU6050: Biblioteca para o acelerômetro MPU6050.
-WiFi: Para a conectividade sem fio.
-WebServer: Para criar um servidor web.
-Configuração de Wi-Fi
-O programa cria uma rede Wi-Fi (ponto de acesso) sem senha, permitindo que dispositivos se conectem e acessem a interface web. O nome da rede e a senha podem ser definidos nas constantes ap_ssid e ap_password.
+             +----------------+
+             |    ESP32       |
+             |                |
+             |   GPIO 21 (SDA)----> SDA (ADXL345)
+             |   GPIO 22 (SCL)----> SCL (ADXL345)
+             |      3V3--------> VCC (ADXL345)
+             |      GND--------> GND (ADXL345)
+             +----------------+
+Bibliotecas Utilizadas
+Wire.h: Para comunicação I2C.
+Adafruit_ADXL345_U.h: Biblioteca para controle do sensor ADXL345.
+WiFi.h: Para configuração da rede Wi-Fi.
+WebServer.h: Para criação do servidor web.
+Agradecimentos
+Agradeço aos professores Fábio Miranda e Mauro de Mendonça Costa pelo apoio e orientação durante o desenvolvimento deste projeto.
 
-Uso
-Conexão: Conecte seu dispositivo à rede Wi-Fi criada pelo programa.
-Acesso à interface: Abra um navegador e acesse o IP exibido no monitor serial (normalmente 192.168.4.1).
-Ajuste o Tempo de Exposição: Use a interface para definir o tempo de exposição (Texp) em horas.
-Iniciar Parar Leituras: Inicie ou pare as leituras de aceleração através da interface.
-Fórmulas
-Aceleração Resultante de Exposição (ARE): Representa a aceleração medida do acelerômetro.
-
-Aceleração Normalizada de Exposição (AREN):
-
-AREN é a aceleração normalizada de exposição.
-
-
-
-Observações
-A funcionalidade de cálculo da aceleração normalizada de exposição para corpo inteiro está em desenvolvimento.
-Filtros adicionais para melhorar a precisão das medições estão sendo planejados.
-Este projeto é licenciado sob a Licença MIT. Veja o arquivo LICENSE para mais detalhes.
-
-## Contato
-
+Contato
 Para mais informações, consulte o repositório do projeto no GitHub https://github.com/darkkouta/acelerometrotst ou entre em contato.
+
+Sinta-se à vontade para modificar qualquer parte ou adicionar informações adicionais!
 
 
