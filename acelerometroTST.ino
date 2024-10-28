@@ -1,15 +1,13 @@
 /*
   ------------------------------------------------------------
-  Projeto: Sistema de Monitoramento de Vibração com MPU6050 e ESP32
+  Projeto: Sistema de Monitoramento de Vibração com ADXL345 ESP32
   Autor: Wellington Barros Rosa
-  Data de Criação: 24/10/2024
-  Versão: 1.4
+  Data de Criação: 01/10/2024
+  Versão: 2.2
   Descrição:
-  Este projeto implementa um sistema de monitoramento de vibração utilizando o sensor MPU6050 e
-  um microcontrolador ESP32 para a leitura de dados de aceleração e giroscópio, além de uma interface
-  web para visualização e ajuste de parâmetros de medição. O sistema permite a configuração de filtros
-  de ponderação e oferece funcionalidades para ajuste de tempo de exposição (Texp), que influencia o
-  cálculo de parâmetros como ARE, AREN, e Dy, baseados nas normas de vibração.
+  Este projeto implementa um sistema de monitoramento de vibração utilizando o sensor ADXL e
+  um microcontrolador ESP32 para a leitura de dados de aceleração e, além de uma interface
+  web para visualização e ajuste de parâmetros de medição. 
 
   Funcionalidades:
   - Leitura e processamento de dados de aceleração do MPU6050.
@@ -17,8 +15,9 @@
   - Ajuste automático de offsets e calibração inicial do giroscópio.
   - Ajuste configurável do tempo de exposição (Texp) pela interface web.
   - Cálculos de parâmetros de vibração como ARE, AREN, AM, AMR, AREP, VDVR, CF, AMJ, PICO e VDVEXP.
-  - Filtros de ponderação WB, WC, WD, WE, WF, WH, WJ, WK e WM para análise de vibração em corpo inteiro e mão/braço.
-  - Configuração de unidade de medida entre m/s² e g.
+  - Filtros de ponderação WB, WC, WD, WE, WF, WH, WJ, WK e WM para análise de vibração em corpo inteiro e mão/braço.(em desenvolvimento)
+  - Configuração de unidade de medida entre m/s².
+  - Realizada o corte da influencia da gravidade nos eixos
 
   Bibliotecas Utilizadas:
   - Wire.h: Para comunicação I2C.
@@ -32,11 +31,12 @@
 */
 
 #include <Wire.h>
-#include <Adafruit_ADXL345_U.h>  
+#include <Adafruit_ADXL345_U.h>  // Biblioteca para o ADXL345
 #include <WiFi.h>
 #include <WebServer.h>
-#include <cmath> 
-#include <arduinoFFT.h>  
+#include <cmath> // Para usar as funções seno e cosseno
+#include <arduinoFFT.h>  // Biblioteca para FFT
+#include <vector> // Para usar vetores
 
 
 // --------------------- CONSTANTES E DEFINIÇÕES PARA FFT ---------------------
@@ -54,9 +54,22 @@ float offsetX = 0.0; // Valor inicial para offsetX
 
 #define UNIDADE_MS2 true // true para m/s², false para g
 #define BANDA_OITAVA 1   // 1 para 1/1 oitava, 3 para 1/3 oitava
-
+const float cutoffFreq = 0.1; // Frequência de corte (em Hz) ajustável conforme necessário
+float alpha = 0.0;            // Fator de suavização do filtro, calculado com base na frequência de corte e na taxa de amostragem
+float previousX = 0, previousY = 0, previousZ = 0; // Armazenar as leituras anteriores
+float filteredX = 0, filteredY = 0, filteredZ = 0; // Leituras filtradas
+// Definição dos fatores de multiplicação
+const float f_x = 1.4;
+const float f_y = 1.4;
+const float f_z = 1.0;
+const int NUM_LEITURAS = 100; // Número total de leituras para calcular a média
+float leiturasX[NUM_LEITURAS]; // Array para armazenar as leituras de X
+float leiturasY[NUM_LEITURAS]; // Array para armazenar as leituras de Y
+float leiturasZ[NUM_LEITURAS]; // Array para armazenar as leituras de Z
+int contadorLeituras = 0; // Contador de leituras
 // Variável Texp
 float Texp = 1.0;  // Valor inicial de Texp em segundos
+std::vector<float> leiturasAceleracao; // Para armazenar as leituras de aceleração
 
 // Filtros de Ponderação
 enum FiltroPonderacao {WB, WC, WD, WE, WF, WH, WJ, WK, WM};
@@ -104,6 +117,7 @@ void setup() {
     inicializarSensor();
     configurarWiFi();
     configurarServidor();
+    alpha = 2 * M_PI * cutoffFreq / (2 * M_PI * cutoffFreq + SAMPLING_FREQUENCY);
     Serial.println("Servidor HTTP iniciado.");
 }
 
@@ -121,8 +135,8 @@ void configurarWiFi() {
     const char* ssid_ap = "Acelerometro";
     const char* password_ap = "";
 
-    const char* ssid_sta = "suarede";
-    const char* password_sta = "suarede";
+    const char* ssid_sta = "Suarede";
+    const char* password_sta = "Suarede";
 
     // Inicializa o Wi-Fi no modo AP
     WiFi.softAP(ssid_ap, password_ap);
@@ -138,6 +152,10 @@ void configurarWiFi() {
 }
 
 // Função para configurar o servidor
+
+
+
+// --------------------- Função para configurar o servidor ---------------------
 void configurarServidor() {
     server.on("/", []() {
         server.send(200, "text/html", 
@@ -177,7 +195,7 @@ void configurarServidor() {
             "setInterval(updateData, 1000);"
             "showTab('dados');" // Mostra a aba de dados por padrão
             "</script></head>"
-            "<body><h1>Monitor de Vibração</h1>"
+            "<body><h1>Dados do Acelerômetro</h1>"
             "<div>"
             "<div class='tab-button' id='btn-dados' onclick='showTab(\"dados\")'>Dados de Vibração</div>"
             "<div class='tab-button' id='btn-config' onclick='showTab(\"config\")'>Configurações</div>"
@@ -201,9 +219,6 @@ void configurarServidor() {
             "</div>"
             "</body></html>");
     });
-
-
-}
 
     server.on("/data", []() {
         String json = "{\"am\":" + String(dados.am) + 
@@ -230,23 +245,43 @@ void configurarServidor() {
     server.begin();
 }
 
+
 // --------------------- LOOP PRINCIPAL ---------------------
 void loop() {
     server.handleClient();
     sensors_event_t event;
     adxl.getEvent(&event);
 
-    // Calcule os dados de vibração com os novos valores de aceleração
-    dados.am = aplicarFiltroPonderacao(calcularAM(event.acceleration.x, event.acceleration.y, event.acceleration.z), filtroAtual);
-    dados.amr = aplicarFiltroPonderacao(calcularAMR(event.acceleration.x, event.acceleration.y, event.acceleration.z), filtroAtual);
-    dados.are = aplicarFiltroPonderacao(calcularARE(event.acceleration.x, event.acceleration.y, event.acceleration.z), filtroAtual);
+    // Aplicar filtro passa-alta nas leituras de aceleração
+    filteredX = alpha * (filteredX + event.acceleration.x - previousX);
+    filteredY = alpha * (filteredY + event.acceleration.y - previousY);
+    filteredZ = alpha * (filteredZ + event.acceleration.z - previousZ);
+
+    // Atualizar as leituras anteriores
+    previousX = event.acceleration.x;
+    previousY = event.acceleration.y;
+    previousZ = event.acceleration.z;
+
+    // Adicionar a leitura de aceleração ao vetor
+    leiturasAceleracao.push_back(filteredX); // Você pode escolher x, y ou z conforme necessário
+
+    // Limitar o tamanho do vetor para evitar uso excessivo de memória
+    if (leiturasAceleracao.size() > 100) { // Mantenha as últimas 100 leituras
+        leiturasAceleracao.erase(leiturasAceleracao.begin());
+    }
+
+    // Calcule os dados de vibração usando as leituras filtradas
+    dados.am = aplicarFiltroPonderacao(calcularAM(filteredX, filteredY, filteredZ), filtroAtual);
+    dados.amr = aplicarFiltroPonderacao(calcularAMR(filteredX, filteredY, filteredZ), filtroAtual);
+    dados.are = aplicarFiltroPonderacao(calcularARE(filteredX, filteredY, filteredZ), filtroAtual);
     dados.aren = calcularAREN(dados.are, Texp);
-    dados.arep = aplicarFiltroPonderacao(calcularAREP(event.acceleration.x, event.acceleration.y, event.acceleration.z), filtroAtual);
-    dados.vdvr = calcularVDVR(event.acceleration.x, offsetX);
-    dados.cf = calcularCF(dados.am, dados.are);
-    dados.amj = aplicarFiltroPonderacao(calcularAMJ(event.acceleration.x, event.acceleration.y, event.acceleration.z), filtroAtual);
-    dados.pico = calcularPICO(event.acceleration.x, event.acceleration.y, event.acceleration.z);
-    dados.vdvexp = calcularVDVEXP(event.acceleration.x, dados.vdvr);
+    dados.arep = aplicarFiltroPonderacao(calcularAREP(filteredX, filteredY, filteredZ), filtroAtual);
+    dados.vdvr = calcularVDVR(filteredX, offsetX);
+    dados.amj = aplicarFiltroPonderacao(calcularAMJ(filteredX, filteredY, filteredZ), filtroAtual);
+    dados.pico = calcularPICO(filteredX, filteredY, filteredZ);
+    dados.cf = calcularCF(dados.pico, dados.are);
+    dados.vdvexp = calcularVDVEXP(dados.vdvr); // Atualize para usar o novo cálculo
+
 
     // Calcula a frequência média usando FFT
     dados.frequencia = calcularFrequenciaFFT();
@@ -254,31 +289,72 @@ void loop() {
 
 // --------------------- FUNÇÕES NOVAS ---------------------
 float calcularFrequenciaFFT() {
+    // Preenche o vetor com amostras
     for (int i = 0; i < SAMPLES; i++) {
         sensors_event_t event;
         adxl.getEvent(&event);
-        vReal[i] = calcularAM(event.acceleration.x, event.acceleration.y, event.acceleration.z);
+        
+        // Use a magnitude da aceleração para a FFT
+        vReal[i] = calcularARE(event.acceleration.x, event.acceleration.y, event.acceleration.z);
         vImag[i] = 0;
         delayMicroseconds(1000000 / SAMPLING_FREQUENCY);
     }
 
+    // Aplica a janela Hamming
     FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
     FFT.compute(FFT_FORWARD);
     FFT.complexToMagnitude();
 
+    // Encontra o pico
     double peakFrequency = FFT.majorPeak();
+
+    // Adicione uma verificação para evitar valores de frequência inválidos
+    if (peakFrequency < 0 || peakFrequency > SAMPLING_FREQUENCY / 2) {
+        return 0.0; // Retorna zero se a frequência estiver fora do esperado
+    }
+
     return peakFrequency;
 }
 
+
 float calcularAREN(float are, float texp) {
-    return are / texp;
+    return are * sqrt(texp / 8.0);
 }
 
 
 float calcularAM(float x, float y, float z) {
-    // Implementar o cálculo de AM
-    return sqrt(x * x + y * y + z * z);
+    // Armazena as leituras
+    if (contadorLeituras < NUM_LEITURAS) {
+        leiturasX[contadorLeituras] = x;
+        leiturasY[contadorLeituras] = y;
+        leiturasZ[contadorLeituras] = z;
+        contadorLeituras++;
+    }
+
+    // Se já temos o número máximo de leituras, calcule a média
+    if (contadorLeituras == NUM_LEITURAS) {
+        float somaX = 0, somaY = 0, somaZ = 0;
+
+        for (int i = 0; i < NUM_LEITURAS; i++) {
+            somaX += leiturasX[i];
+            somaY += leiturasY[i];
+            somaZ += leiturasZ[i];
+        }
+
+        // Calcula a média
+        float am = sqrt((somaX / NUM_LEITURAS) * (somaX / NUM_LEITURAS) +
+                        (somaY / NUM_LEITURAS) * (somaY / NUM_LEITURAS) +
+                        (somaZ / NUM_LEITURAS) * (somaZ / NUM_LEITURAS));
+
+        // Reinicia o contador para a próxima série de leituras
+        contadorLeituras = 0;
+        return am;
+    }
+
+    // Retorna 0 se não houver leituras suficientes
+    return 0.0;
 }
+
 
 float aplicarFiltroPonderacao(float valor, FiltroPonderacao filtro) {
     // Implementar o filtro de ponderação
@@ -286,18 +362,60 @@ float aplicarFiltroPonderacao(float valor, FiltroPonderacao filtro) {
 }
 
 float calcularAMR(float x, float y, float z) {
-    // Implementar o cálculo de AMR
-    return fabs(x) + fabs(y) + fabs(z);
+    static float leiturasX[NUM_LEITURAS]; // Array para armazenar as leituras de X
+    static float leiturasY[NUM_LEITURAS]; // Array para armazenar as leituras de Y
+    static float leiturasZ[NUM_LEITURAS]; // Array para armazenar as leituras de Z
+    static int contadorLeituras = 0; // Contador de leituras
+
+    // Armazena as leituras
+    if (contadorLeituras < NUM_LEITURAS) {
+        leiturasX[contadorLeituras] = fabs(x); // Usa o valor absoluto
+        leiturasY[contadorLeituras] = fabs(y); // Usa o valor absoluto
+        leiturasZ[contadorLeituras] = fabs(z); // Usa o valor absoluto
+        contadorLeituras++;
+    }
+
+    // Se já temos o número máximo de leituras, calcule a média
+    if (contadorLeituras == NUM_LEITURAS) {
+        float somaX = 0, somaY = 0, somaZ = 0;
+
+        for (int i = 0; i < NUM_LEITURAS; i++) {
+            somaX += leiturasX[i];
+            somaY += leiturasY[i];
+            somaZ += leiturasZ[i];
+        }
+
+        // Calcula a AMR
+        float amr = (somaX + somaY + somaZ) / (3 * NUM_LEITURAS); // Dividido por 3 para considerar os três eixos
+
+        // Reinicia o contador para a próxima série de leituras
+        contadorLeituras = 0;
+        return amr;
+    }
+
+    // Retorna 0 se não houver leituras suficientes
+    return 0.0;
 }
 
 float calcularARE(float x, float y, float z) {
-    // Implementar o cálculo de ARE
-    return sqrt(x * x + y * y + z * z) / sqrt(3);
+    // Cálculo correto da ARE
+    return sqrt(x * x + y * y + z * z);
 }
 
 float calcularAREP(float x, float y, float z) {
-    // Implementar o cálculo de AREP
-    return fmax(fabs(x), fmax(fabs(y), fabs(z)));
+    // Definindo os fatores de multiplicação
+    const float fx = 1.4;
+    const float fy = 1.4;
+    const float fz = 1.0;
+
+    // Calculando a aceleração média para os eixos
+    float amx = calcularAM(x, 0, 0); // Aceleração média no eixo x
+    float amy = calcularAM(0, y, 0); // Aceleração média no eixo y
+    float amz = calcularAM(0, 0, z); // Aceleração média no eixo z
+
+    // Calculando a AREP
+    float arep = sqrt(pow(fx * amx, 2) + pow(fy * amy, 2) + pow(fz * amz, 2));
+    return arep;
 }
 
 float calcularVDVR(float x, float offset) {
@@ -305,10 +423,13 @@ float calcularVDVR(float x, float offset) {
     return x - offset;
 }
 
-float calcularCF(float am, float are) {
-    // Implementar o cálculo de CF
-    return am / are;
+float calcularCF(float pico, float are) {
+    if (are != 0) { // Para evitar divisão por zero
+        return pico / are;
+    }
+    return 0; // Retorna 0 se ARE for 0
 }
+
 
 float calcularAMJ(float x, float y, float z) {
     // Implementar o cálculo de AMJ
@@ -320,7 +441,18 @@ float calcularPICO(float x, float y, float z) {
     return fmax(fabs(x), fmax(fabs(y), fabs(z)));
 }
 
-float calcularVDVEXP(float x, float vdvr) {
-    // Implementar o cálculo de VDVEXP
-    return x + vdvr;
+float calcularVDVEXP(float vdvr) {
+    float somaQuartasPotencias = 0.0;
+
+    // Calcular a soma das quartas potências das leituras
+    for (float leitura : leiturasAceleracao) {
+        somaQuartasPotencias += pow(fabs(leitura), 4); // Usar a magnitude da leitura
+    }
+
+    // Se houver leituras, calcular e retornar a raiz quarta
+    if (!leiturasAceleracao.empty()) {
+        return pow(somaQuartasPotencias, 0.25); // Raiz quarta da soma
+    }
+
+    return 0; // Retorna 0 se não houver leituras
 }
